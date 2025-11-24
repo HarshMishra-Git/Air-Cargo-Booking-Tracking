@@ -1,0 +1,213 @@
+groups:
+  - name: air_cargo_alerts
+    interval: 30s
+    rules:
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # API Response Time
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API latency detected"
+          description: "95th percentile latency is {{ $value }}s (threshold: 1s)"
+
+      # Database Connection Pool
+      - alert: DatabaseConnectionPoolExhausted
+        expr: database_connections_active / database_connections_max > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "{{ $value | humanizePercentage }} of connections in use"
+
+      # Redis Connection Issues
+      - alert: RedisConnectionFailure
+        expr: redis_connection_errors_total > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis connection failures detected"
+          description: "{{ $value }} connection errors in the last 5 minutes"
+
+      # Cache Hit Rate
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[10m]) / (rate(cache_hits_total[10m]) + rate(cache_misses_total[10m])) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 50%)"
+
+      # Booking Creation Rate Drop
+      - alert: BookingCreationRateDrop
+        expr: rate(bookings_created_total[10m]) < 0.1
+        for: 15m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Booking creation rate dropped significantly"
+          description: "Only {{ $value }} bookings/sec (expected: >0.1/sec)"
+
+      # Lock Acquisition Failures
+      - alert: HighLockAcquisitionFailures
+        expr: rate(lock_acquisition_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: locks
+        annotations:
+          summary: "High rate of lock acquisition failures"
+          description: "{{ $value }} lock failures/sec indicating high contention"
+
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job="air-cargo-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "Air Cargo API service is down"
+          description: "Service has been down for more than 1 minute"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 / 1024 > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: resources
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }}GB (threshold: 2GB)"
+
+      # Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Disk space running low"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining"
+
+      # Rate Limit Exceeded Frequently
+      - alert: FrequentRateLimitExceeded
+        expr: rate(http_requests_total{status="429"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: info
+          component: api
+        annotations:
+          summary: "Rate limits being exceeded frequently"
+          description: "{{ $value }} rate limit violations/sec"
+
+      # Booking Cancellation Spike
+      - alert: BookingCancellationSpike
+        expr: rate(bookings_cancelled_total[10m]) > rate(bookings_created_total[10m]) * 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Unusual spike in booking cancellations"
+          description: "Cancellation rate is {{ $value | humanizePercentage }} of creation rate"
+
+      # Database Query Slow
+      - alert: SlowDatabaseQueries
+        expr: histogram_quantile(0.95, rate(database_query_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile query time is {{ $value }}s (threshold: 0.5s)"
+
+      # Authentication Failures
+      - alert: HighAuthenticationFailureRate
+        expr: rate(authentication_failures_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "{{ $value }} auth failures/sec - possible attack"
+
+      # No Bookings Created
+      - alert: NoBookingsCreated
+        expr: increase(bookings_created_total[1h]) == 0
+        for: 1h
+        labels:
+          severity: critical
+          component: business
+        annotations:
+          summary: "No bookings created in the last hour"
+          description: "System may be down or experiencing issues"
+
+# Notification channels configuration
+alertmanager_config:
+  route:
+    receiver: 'default'
+    group_by: ['alertname', 'severity']
+    group_wait: 10s
+    group_interval: 10s
+    repeat_interval: 12h
+    routes:
+      - match:
+          severity: critical
+        receiver: 'pagerduty'
+        continue: true
+      - match:
+          severity: warning
+        receiver: 'slack'
+      - match:
+          severity: info
+        receiver: 'email'
+
+  receivers:
+    - name: 'default'
+      webhook_configs:
+        - url: 'http://localhost:9093/webhook'
+
+    - name: 'pagerduty'
+      pagerduty_configs:
+        - service_key: '<PAGERDUTY_SERVICE_KEY>'
+          description: '{{ .CommonAnnotations.summary }}'
+
+    - name: 'slack'
+      slack_configs:
+        - api_url: '<SLACK_WEBHOOK_URL>'
+          channel: '#air-cargo-alerts'
+          title: '{{ .CommonAnnotations.summary }}'
+          text: '{{ .CommonAnnotations.description }}'
+
+    - name: 'email'
+      email_configs:
+        - to: 'ops-team@example.com'
+          from: 'alerts@aircargo.com'
+          smarthost: 'smtp.example.com:587'
+          auth_username: '<SMTP_USERNAME>'
+          auth_password: '<SMTP_PASSWORD>'
