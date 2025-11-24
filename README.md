@@ -208,7 +208,7 @@ stateDiagram-v2
 ### 1. Clone Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/HarshMishra-Git/Air-Cargo-Booking-Tracking.git
 cd air-cargo-system
 ```
 
