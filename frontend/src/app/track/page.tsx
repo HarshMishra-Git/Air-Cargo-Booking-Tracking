@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiService } from '@/services/api';
 import { BookingHistory } from '@/types';
@@ -9,7 +9,7 @@ import Timeline from '@/components/Timeline';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
 import ErrorMessage from '@/components/ErrorMessage';
 
-export default function TrackPage() {
+function TrackContent() {
   const searchParams = useSearchParams();
   const refId = searchParams.get('ref_id');
   
@@ -45,7 +45,7 @@ export default function TrackPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Track Booking</h1>
 
       {loading && (
@@ -63,6 +63,16 @@ export default function TrackPage() {
           <Timeline events={bookingHistory.timeline} />
         </div>
       )}
+    </>
+  );
+}
+
+export default function TrackPage() {
+  return (
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <Suspense fallback={<LoadingSkeleton type="card" />}>
+        <TrackContent />
+      </Suspense>
     </div>
   );
 }
